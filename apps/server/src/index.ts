@@ -8,6 +8,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { Pool } from 'pg';
+import dns from 'dns';
 import argon2 from 'argon2';
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
@@ -29,7 +30,9 @@ const isLocalDb = !!rawDbUrl && /localhost|127\.0\.0\.1/i.test(rawDbUrl);
 const connWithSsl = rawDbUrl && !/sslmode=/i.test(rawDbUrl) ? `${rawDbUrl}${rawDbUrl.includes('?') ? '&' : '?'}sslmode=require` : rawDbUrl;
 const pool = new Pool({
   connectionString: connWithSsl,
-  ssl: isLocalDb ? undefined : { rejectUnauthorized: false }
+  ssl: isLocalDb ? undefined : { rejectUnauthorized: false },
+  // Force IPv4 to avoid ENETUNREACH when environment lacks IPv6 routing
+  lookup: (hostname: string, _opts: any, cb: any) => dns.lookup(hostname, { family: 4 }, cb)
 });
 
 // Storage
