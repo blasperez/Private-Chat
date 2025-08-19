@@ -18,7 +18,7 @@ NODE_ENV = "production"
 # DATA_ENCRYPTION_KEY = "<32 bytes base64>"
 # SUPABASE_URL = "https://ycwrbbngtroftmvuczka.supabase.co"
 # SUPABASE_SERVICE_ROLE_KEY = "<service role key>"
-# DATABASE_URL = "postgresql://postgres:Desmadre%2C132@db.ycwrbbngtroftmvuczka.supabase.co:5432/postgres"
+# DATABASE_URL = "postgresql://postgres:uJ49eE2A34GIARtI@db.ycwrbbngtroftmvuczka.supabase.co:5432/postgres"
 # VITE_SUPABASE_URL = "https://ycwrbbngtroftmvuczka.supabase.co"
 # VITE_SUPABASE_ANON_KEY = "<anon key>"
 
