@@ -1,6 +1,6 @@
 [services.backend]
 root = ".r"
-buildCommand = "cd apps && npm ci --omit=dev && npm run build:web"
+buildCommand = "cd apps && npm ci && npm run build:web --omit=dev"
 startCommand = "npm start"
 
 [deploy]
