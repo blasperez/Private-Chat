@@ -1,6 +1,6 @@
 [build]
 builder = "nixpacks"
-buildCommand = "npm install --no-audit --no-fund && npm run build:client"
+buildCommand = "cd server && npm install --no-audit --no-fund && npm run build:client"
 
 [deploy]
 startCommand = "npm run start"
