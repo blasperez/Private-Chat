@@ -1,0 +1,24 @@
+[build]
+# Use Nixpacks (default) and build both server and client
+# We build from repo root but run commands inside server/
+builder = "nixpacks"
+buildCommand = "cd server && npm install --no-audit --no-fund && npm run build:client"
+
+[deploy]
+# Start Express server (serves API, websockets y estáticos del cliente)
+startCommand = "cd server && npm start"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 100
+restartPolicyType = "onFailure"
+
+[env]
+NODE_ENV = "production"
+# Define these in Railway Variables (Dashboard) — no pongas secretos en el repo:
+# PUBLIC_URL = "https://developer-production-a92c.up.railway.app"
+# DATA_ENCRYPTION_KEY = "<32 bytes base64>"
+# SUPABASE_URL = "https://ycwrbbngtroftmvuczka.supabase.co"
+# SUPABASE_SERVICE_ROLE_KEY = "<service role key>"
+# DATABASE_URL = "postgresql://postgres:Desmadre%2C132@db.ycwrbbngtroftmvuczka.supabase.co:5432/postgres"
+# VITE_SUPABASE_URL = "https://ycwrbbngtroftmvuczka.supabase.co"
+# VITE_SUPABASE_ANON_KEY = "<anon key>"
+
