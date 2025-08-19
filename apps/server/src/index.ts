@@ -23,8 +23,14 @@ const ADMIN_USER = process.env.ADMIN_USER;
 const ADMIN_PASS = process.env.ADMIN_PASS;
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 
-// DB pool
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// DB pool (force SSL for managed providers like Supabase)
+const rawDbUrl = process.env.DATABASE_URL;
+const isLocalDb = !!rawDbUrl && /localhost|127\.0\.0\.1/i.test(rawDbUrl);
+const connWithSsl = rawDbUrl && !/sslmode=/i.test(rawDbUrl) ? `${rawDbUrl}${rawDbUrl.includes('?') ? '&' : '?'}sslmode=require` : rawDbUrl;
+const pool = new Pool({
+  connectionString: connWithSsl,
+  ssl: isLocalDb ? undefined : { rejectUnauthorized: false }
+});
 
 // Storage
 const DATA_DIR = path.resolve(process.cwd(), 'data');
@@ -126,6 +132,8 @@ app.post('/api/rooms', async (req, res) => {
     );
     res.json({ roomId: rows[0].id, magicLink: `${req.protocol}://${req.get('host')}/r/${rows[0].magic_token}` });
   } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('CREATE_ROOM_FAILED', e);
     res.status(500).json({ error: 'CREATE_ROOM_FAILED' });
   }
 });
