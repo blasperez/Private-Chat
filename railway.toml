@@ -1,10 +1,10 @@
 [services.backend]
-root = ".r"
+root = "server"
 buildCommand = "cd apps && npm ci && npm run build:web --omit=dev"
 startCommand = "npm start"
 
 [deploy]
 branch = "main"
-healthcheckPath = "/health"
+healthcheckPath = "/api/health"
 restartPolicyType = "ON_FAILURE"
 
