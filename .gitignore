@@ -1,0 +1,15 @@
+node_modules
+.DS_Store
+dist
+.env
+.env.local
+*.log
+coverage
+tmp
+.turbo
+.parcel-cache
+.vercel
+.cache
+/apps/server/build
+/apps/web/dist
+/data
