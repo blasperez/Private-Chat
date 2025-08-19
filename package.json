@@ -1,0 +1,18 @@
+{
+  "name": "private-temporary-chat",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "build": "npm run -w apps/web build && npm run -w apps/server build",
+    "dev": "concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm run -w apps/server dev",
+    "dev:web": "npm run -w apps/web dev",
+    "typecheck": "npm run -w apps/server typecheck && npm run -w apps/web typecheck",
+    "start": "node apps/server/build/index.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
+

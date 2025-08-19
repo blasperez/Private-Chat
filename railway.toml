@@ -1,0 +1,10 @@
+[services.backend]
+root = "."
+buildCommand = "npm ci && npm run build"
+startCommand = "npm start"
+
+[deploy]
+branch = "main"
+healthcheckPath = "/health"
+restartPolicyType = "ON_FAILURE"
+
