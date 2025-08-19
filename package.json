@@ -9,6 +9,7 @@
   "scripts": {
     "build": "npm run -w apps/web build && npm run -w apps/server build",
     "build:client": "npm run -w apps/web build && npm run -w apps/server build",
+    "dev:mobile": "npm run -w apps/mobile start",
     "dev": "concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "npm run -w apps/server dev",
     "dev:web": "npm run -w apps/web dev",
