@@ -9,12 +9,14 @@ export default function App() {
   const [phase, setPhase] = useState<'create' | 'resolve' | 'join' | 'room'>('create')
   const [password, setPassword] = useState('')
   const [magicLink, setMagicLink] = useState('')
+  const [capacity, setCapacity] = useState(10)
   const [roomId, setRoomId] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
   const [text, setText] = useState('')
   const [presence, setPresence] = useState(0)
   const socketRef = useRef<Socket | null>(null)
   const [joinToken, setJoinToken] = useState('')
+  const [displayName, setDisplayName] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
 
@@ -46,7 +48,7 @@ export default function App() {
     try {
       setError('')
       setCreating(true)
-      const res = await fetch(`${API_BASE}/api/rooms`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) })
+      const res = await fetch(`${API_BASE}/api/rooms`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password, capacity }) })
       const json = await res.json().catch(()=>({}))
       if (!res.ok) throw new Error(json?.error || 'ERROR')
       setMagicLink(json.magicLink)
@@ -67,10 +69,11 @@ export default function App() {
   }
 
   async function joinRoom() {
-    const res = await fetch(`${API_BASE}/api/rooms/${roomId}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) })
+    const res = await fetch(`${API_BASE}/api/rooms/${roomId}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password, name: displayName }) })
     if (res.ok) {
       const json = await res.json()
       setJoinToken(json.token)
+      if (displayName) localStorage.setItem('sr_name', displayName)
       setPhase('room')
     }
   }
@@ -105,6 +108,8 @@ export default function App() {
           <div className="col">
             <label>Crear sala (contraseña)</label>
             <input className="password" placeholder="••••••" value={password} onChange={(e)=>setPassword(e.target.value)} type="password" />
+            <label>Capacidad (2-50)</label>
+            <input className="input" type="number" min={2} max={50} value={capacity} onChange={(e)=> setCapacity(Math.min(50, Math.max(2, Number(e.target.value||10))))} />
             <div className="row">
               <button className="btn" onClick={createRoom} disabled={creating}>{creating ? 'Creando…' : 'Crear'}</button>
             </div>
@@ -133,6 +138,7 @@ export default function App() {
           <div className="col">
             <div className="subtitle">La sala requiere contraseña</div>
             <input className="password" placeholder="••••••" value={password} onChange={(e)=>setPassword(e.target.value)} type="password" />
+            <input className="input" placeholder="Tu nombre (opcional)" value={displayName} onChange={(e)=>setDisplayName(e.target.value)} />
             <div className="row">
               <button className="btn" onClick={joinRoom}>Entrar</button>
             </div>

@@ -112,16 +112,17 @@ function adminAuth(req: express.Request, res: express.Response, next: express.Ne
 // Create room
 app.post('/api/rooms', async (req, res) => {
   try {
-    const { password } = req.body as { password: string };
+    const { password, capacity } = req.body as { password: string; capacity?: number };
     if (!password) return res.status(400).json({ error: 'PASSWORD_REQUIRED' });
+    const cap = Math.min(Math.max(Number(capacity || 10), 2), 50);
     const roomId = uuidv4();
     const passwordHash = await argon2.hash(password);
     const magicToken = uuidv4();
     const mediaDir = path.join(DATA_DIR, roomId);
     fs.mkdirSync(mediaDir, { recursive: true });
     const { rows } = await pool.query(
-      'insert into rooms (id, password_hash, magic_token, media_dir) values ($1, $2, $3, $4) returning id, magic_token',
-      [roomId, passwordHash, magicToken, mediaDir]
+      'insert into rooms (id, password_hash, magic_token, media_dir, max_participants) values ($1, $2, $3, $4, $5) returning id, magic_token',
+      [roomId, passwordHash, magicToken, mediaDir, cap]
     );
     res.json({ roomId: rows[0].id, magicLink: `${req.protocol}://${req.get('host')}/r/${rows[0].magic_token}` });
   } catch (e) {
@@ -141,17 +142,23 @@ app.get('/api/resolve/:token', async (req, res) => {
 app.post('/api/rooms/:roomId/join', async (req, res) => {
   try {
     const { roomId } = req.params;
-    const { password } = req.body as { password: string };
+    const { password, name } = req.body as { password: string; name?: string };
     const ip = req.headers['x-forwarded-for']?.toString().split(',')[0] || req.socket.remoteAddress || '';
     const ua = req.headers['user-agent'] || '';
-    const room = await pool.query('select id, password_hash, archived_at from rooms where id=$1', [roomId]);
+    const room = await pool.query('select id, password_hash, archived_at, max_participants from rooms where id=$1', [roomId]);
     if (!room.rows[0]) return res.status(404).json({ error: 'NOT_FOUND' });
     if (room.rows[0].archived_at) return res.status(410).json({ error: 'ROOM_ARCHIVED' });
     const ok = await argon2.verify(room.rows[0].password_hash, password);
     if (!ok) return res.status(401).json({ error: 'INVALID_PASSWORD' });
-    await pool.query('insert into room_sessions (room_id, joined_at, ip, user_agent) values ($1, now(), $2, $3)', [roomId, ip, ua]);
-    const token = jwt.sign({ roomId }, SESSION_SECRET, { expiresIn: '2h' });
-    res.json({ ok: true, token });
+    // capacity check
+    const p = presence.get(roomId) || { roomId, count: 0 };
+    if (room.rows[0].max_participants && p.count >= Number(room.rows[0].max_participants)) {
+      return res.status(429).json({ error: 'ROOM_FULL' });
+    }
+    const safeName = (name || '').toString().trim().slice(0, 32) || undefined;
+    await pool.query('insert into room_sessions (room_id, joined_at, ip, user_agent, display_name) values ($1, now(), $2, $3, $4)', [roomId, ip, ua, safeName]);
+    const token = jwt.sign({ roomId, name: safeName }, SESSION_SECRET, { expiresIn: '2h' });
+    res.json({ ok: true, token, name: safeName });
   } catch (e) {
     res.status(500).json({ error: 'JOIN_FAILED' });
   }
@@ -353,8 +360,9 @@ io.use((socket, next) => {
   const token = (socket.handshake.auth as any)?.token as string | undefined;
   if (!token) return next(new Error('NO_TOKEN'));
   try {
-    const payload = jwt.verify(token, SESSION_SECRET) as { roomId: string };
+    const payload = jwt.verify(token, SESSION_SECRET) as { roomId: string; name?: string };
     (socket.data as any).roomId = payload.roomId;
+    (socket.data as any).name = payload.name;
     next();
   } catch {
     next(new Error('INVALID_TOKEN'));
@@ -381,7 +389,8 @@ io.on('connection', (socket) => {
     const cipher = getCipher();
     const safeText = cipher ? cipher.encrypt(payload.text) : payload.text;
     await pool.query('insert into messages (room_id, text, created_at) values ($1, $2, now())', [payload.roomId, safeText]);
-    io.to(payload.roomId).emit('message', { text: payload.text, sender: payload.sender, ts: Date.now() });
+    const sender = payload.sender || (socket as any)?.data?.name;
+    io.to(payload.roomId).emit('message', { text: payload.text, sender, ts: Date.now() });
   });
 
   socket.on('leave', ({ roomId }: { roomId: string }) => {
