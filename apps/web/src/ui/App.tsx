@@ -31,7 +31,7 @@ export default function App() {
       socketRef.current = s
       s.emit('join', { roomId })
       s.on('message', (m: Message) => setMessages((prev) => [...prev, m]))
-      s.on('media', (m: any) => setMessages((prev) => [...prev, { text: `[media] ${m.fileName}`, ts: Date.now() }]))
+      s.on('media', (m: any) => setMessages((prev) => [...prev, { text: JSON.stringify({ media: m }), ts: Date.now() }]))
       s.on('presence', (p: any) => setPresence(p.count))
       return () => {
         s.emit('leave', { roomId })
@@ -137,9 +137,43 @@ export default function App() {
             <div className="subtitle">Conectados: {presence}</div>
           </div>
           <div className="chat-box">
-            {messages.map((m,i)=> (
-              <div key={i} className="bubble">{m.text}</div>
-            ))}
+            {messages.map((m,i)=> {
+              try {
+                const parsed = JSON.parse(m.text)
+                if (parsed && parsed.media) {
+                  const med = parsed.media
+                  if ((med.mime as string).startsWith('image/')) {
+                    return (
+                      <div key={i} className="bubble">
+                        <img src={`${API_BASE}${med.url}`} alt={med.fileName} style={{ maxWidth: '240px', borderRadius: 8 }} />
+                      </div>
+                    )
+                  }
+                  if ((med.mime as string).startsWith('video/')) {
+                    return (
+                      <div key={i} className="bubble">
+                        <video src={`${API_BASE}${med.url}`} controls style={{ maxWidth: '280px', borderRadius: 8 }} />
+                      </div>
+                    )
+                  }
+                  if ((med.mime as string).startsWith('audio/')) {
+                    return (
+                      <div key={i} className="bubble">
+                        <audio src={`${API_BASE}${med.url}`} controls />
+                      </div>
+                    )
+                  }
+                  return (
+                    <div key={i} className="bubble">
+                      <a href={`${API_BASE}${med.url}`} target="_blank" rel="noreferrer">{med.fileName}</a>
+                    </div>
+                  )
+                }
+              } catch {}
+              return (
+                <div key={i} className="bubble">{m.text}</div>
+              )
+            })}
           </div>
           <div className="row">
             <input className="input" placeholder="Escribe un mensaje" value={text} onChange={(e)=>setText(e.target.value)} onKeyDown={(e)=> e.key==='Enter' && sendMessage()} />
@@ -149,10 +183,15 @@ export default function App() {
         </div>
       )}
 
-      <ins className="adsbygoogle" style={{ display: 'block', marginTop: 16 }} data-ad-client={import.meta.env.VITE_ADSENSE_CLIENT} data-ad-slot={import.meta.env.VITE_ADSENSE_SLOT_TOP} data-ad-format="auto" data-full-width-responsive="true"></ins>
-      <script dangerouslySetInnerHTML={{ __html: `
-        (adsbygoogle = window.adsbygoogle || []).push({});
-      `}} />
+      {import.meta.env.VITE_ADSENSE_CLIENT && (
+        <>
+          <script async src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${import.meta.env.VITE_ADSENSE_CLIENT}`} crossOrigin="anonymous"></script>
+          <ins className="adsbygoogle" style={{ display: 'block', marginTop: 16 }} data-ad-client={import.meta.env.VITE_ADSENSE_CLIENT} data-ad-slot={import.meta.env.VITE_ADSENSE_SLOT_TOP} data-ad-format="auto" data-full-width-responsive="true"></ins>
+          <script dangerouslySetInnerHTML={{ __html: `
+            (adsbygoogle = window.adsbygoogle || []).push({});
+          `}} />
+        </>
+      )}
     </div>
   )
 }

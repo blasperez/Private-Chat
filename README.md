@@ -21,6 +21,23 @@ Plataforma de chat con salas privadas temporales, sin registro de usuarios, con 
 ## Entorno (.env)
 Ver `.env.example`. Requiere credenciales de Supabase para DB/Storage.
 
+```
+# apps/server/.env.example
+PORT=8080
+ORIGIN=http://localhost:5173
+DATABASE_URL=postgresql://postgres:password@host:5432/postgres
+ENCRYPTION_KEY=base64_o_hex_32_bytes
+SESSION_SECRET=una_cadena_segura
+SUPABASE_URL=https://<ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=ey...
+SUPABASE_STORAGE_BUCKET=media
+
+# apps/web/.env.example
+VITE_API_BASE=http://localhost:8080
+VITE_ADSENSE_CLIENT=ca-pub-xxxxxxxxxxxxxxxx
+VITE_ADSENSE_SLOT_TOP=1234567890
+```
+
 ## Migraciones
 Ejecuta el SQL de `apps/server/db/migrations/001_init.sql` en PostgreSQL (Supabase) para crear tablas y políticas.
 

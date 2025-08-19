@@ -81,6 +81,7 @@ function getCipher() {
 
 // Health
 app.get('/health', (_req, res) => res.json({ ok: true }));
+app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
 // Create room
 app.post('/api/rooms', async (req, res) => {
@@ -258,7 +259,8 @@ async function archiveRoom(roomId: string) {
   try {
     const logDir = path.join(DATA_DIR, 'archives');
     fs.mkdirSync(logDir, { recursive: true });
-    const logPath = path.join(logDir, `${roomId}_${Date.now()}.log.jsonl`);
+    const ts = Date.now();
+    const logPath = path.join(logDir, `${roomId}_${ts}.log.jsonl`);
     const { rows: msgs } = await pool.query('select text, created_at from messages where room_id=$1 order by created_at asc', [roomId]);
     const cipher = getCipher();
     const write = fs.createWriteStream(logPath);
@@ -268,8 +270,22 @@ async function archiveRoom(roomId: string) {
       })() : m.text;
       write.write(JSON.stringify({ ts: m.created_at, text }) + '\n');
     }
-    write.end();
-    await pool.query('update rooms set archived_at=now(), archive_path=$2 where id=$1', [roomId, logPath]);
+    await new Promise<void>((resolve) => { write.end(resolve); });
+
+    // Optionally encrypt the archive file at rest
+    let finalArchivePath = logPath;
+    if (cipher) {
+      try {
+        const raw = fs.readFileSync(logPath, 'utf8');
+        const encPayload = cipher.encrypt(raw);
+        const encPath = path.join(logDir, `${roomId}_${ts}.log.enc`);
+        fs.writeFileSync(encPath, encPayload, 'utf8');
+        fs.unlinkSync(logPath);
+        finalArchivePath = encPath;
+      } catch {}
+    }
+
+    await pool.query('update rooms set archived_at=now(), archive_path=$2 where id=$1', [roomId, finalArchivePath]);
   } catch (e) {
     // Best-effort
   }
