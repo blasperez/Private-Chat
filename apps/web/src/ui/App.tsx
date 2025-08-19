@@ -15,6 +15,8 @@ export default function App() {
   const [presence, setPresence] = useState(0)
   const socketRef = useRef<Socket | null>(null)
   const [joinToken, setJoinToken] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState('')
 
   const token = useMemo(() => {
     const m = window.location.pathname.match(/^\/r\/(.+)$/)
@@ -41,10 +43,17 @@ export default function App() {
   }, [phase, roomId, joinToken])
 
   async function createRoom() {
-    const res = await fetch(`${API_BASE}/api/rooms`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) })
-    const json = await res.json()
-    if (res.ok) {
+    try {
+      setError('')
+      setCreating(true)
+      const res = await fetch(`${API_BASE}/api/rooms`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) })
+      const json = await res.json().catch(()=>({}))
+      if (!res.ok) throw new Error(json?.error || 'ERROR')
       setMagicLink(json.magicLink)
+    } catch (e:any) {
+      setError('No se pudo crear la sala')
+    } finally {
+      setCreating(false)
     }
   }
 
@@ -97,7 +106,7 @@ export default function App() {
             <label>Crear sala (contraseña)</label>
             <input className="password" placeholder="••••••" value={password} onChange={(e)=>setPassword(e.target.value)} type="password" />
             <div className="row">
-              <button className="btn" onClick={createRoom}>Crear</button>
+              <button className="btn" onClick={createRoom} disabled={creating}>{creating ? 'Creando…' : 'Crear'}</button>
             </div>
             {magicLink && (
               <div className="col">
@@ -105,6 +114,7 @@ export default function App() {
                 <input className="input" value={magicLink} readOnly />
               </div>
             )}
+            {error && <span className="warning">{error}</span>}
           </div>
         </div>
       )}

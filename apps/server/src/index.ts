@@ -15,7 +15,7 @@ import jwt from 'jsonwebtoken';
 import { supabase } from './supabase';
 
 const PORT = Number(process.env.PORT || 8080);
-const ORIGIN = process.env.ORIGIN?.split(',').map((s)=>s.trim()).filter(Boolean) || ['*'];
+const ORIGIN_LIST = process.env.ORIGIN?.split(',').map((s)=>s.trim()).filter(Boolean);
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY; // 32 bytes base64/hex
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const SUPABASE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET;
@@ -35,7 +35,7 @@ const upload = multer({ dest: path.join(DATA_DIR, 'tmp'), limits: { fileSize: 10
 
 const app = express();
 app.use(helmet());
-app.use(cors({ origin: ORIGIN, credentials: true }));
+app.use(cors({ origin: ORIGIN_LIST && ORIGIN_LIST.length > 0 ? ORIGIN_LIST : true, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 
 // Serve built frontend if exists
@@ -48,7 +48,7 @@ if (fs.existsSync(WEB_DIST)) {
 }
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: ORIGIN } });
+const io = new Server(server, { cors: { origin: ORIGIN_LIST && ORIGIN_LIST.length > 0 ? ORIGIN_LIST : '*' } });
 
 type RoomPresence = {
   roomId: string;
