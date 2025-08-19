@@ -10,6 +10,9 @@ declare namespace NodeJS {
     SUPABASE_KEY?: string
     SUPABASE_ANON_KEY?: string
     SUPABASE_STORAGE_BUCKET?: string
+    ADMIN_USER?: string
+    ADMIN_PASS?: string
+    ADMIN_TOKEN?: string
   }
 }
 

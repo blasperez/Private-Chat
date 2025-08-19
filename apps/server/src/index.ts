@@ -19,6 +19,9 @@ const ORIGIN = process.env.ORIGIN || 'http://localhost:5173';
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY; // 32 bytes base64/hex
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const SUPABASE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET;
+const ADMIN_USER = process.env.ADMIN_USER;
+const ADMIN_PASS = process.env.ADMIN_PASS;
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 
 // DB pool
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -83,6 +86,29 @@ function getCipher() {
 app.get('/health', (_req, res) => res.json({ ok: true }));
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
+// --- Admin auth middleware ---
+function adminAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  try {
+    // Token via header or query
+    const token = (req.headers['x-admin-token'] as string) || (req.query.token as string) || '';
+    if (ADMIN_TOKEN && token) {
+      const a = Buffer.from(ADMIN_TOKEN);
+      const b = Buffer.from(token);
+      if (a.length === b.length && crypto.timingSafeEqual(a, b)) return next();
+    }
+    // Basic auth
+    const auth = req.headers['authorization'] || '';
+    if (auth.startsWith('Basic ') && ADMIN_USER && ADMIN_PASS) {
+      const creds = Buffer.from(auth.slice(6), 'base64').toString();
+      const [user, pass] = creds.split(':');
+      const uOk = crypto.timingSafeEqual(Buffer.from(user || ''), Buffer.from(ADMIN_USER));
+      const pOk = crypto.timingSafeEqual(Buffer.from(pass || ''), Buffer.from(ADMIN_PASS));
+      if (uOk && pOk) return next();
+    }
+  } catch {}
+  res.status(401).json({ error: 'UNAUTHORIZED' });
+}
+
 // Create room
 app.post('/api/rooms', async (req, res) => {
   try {
@@ -131,6 +157,45 @@ app.post('/api/rooms/:roomId/join', async (req, res) => {
   }
 });
 
+function sanitizeFilename(name: string): string {
+  const base = path.basename(name).replace(/\\|\//g, '');
+  // keep letters, numbers, space, dash, underscore, dot
+  const cleaned = base.normalize('NFKD').replace(/[^A-Za-z0-9._ -]+/g, '');
+  return cleaned.length ? cleaned : `file_${Date.now()}`;
+}
+
+async function ensureUniqueFsName(dir: string, desired: string): Promise<string> {
+  const ext = path.extname(desired);
+  const base = path.basename(desired, ext);
+  let candidate = desired;
+  let index = 1;
+  while (fs.existsSync(path.join(dir, candidate))) {
+    candidate = `${base} (${index})${ext}`;
+    index += 1;
+  }
+  return candidate;
+}
+
+async function ensureUniqueStorageName(roomId: string, desired: string): Promise<string> {
+  if (!SUPABASE_BUCKET) return desired;
+  const ext = path.extname(desired);
+  const base = path.basename(desired, ext);
+  let candidate = desired;
+  let index = 1;
+  // try to list names and ensure uniqueness
+  try {
+    const { data, error } = await supabase.storage.from(SUPABASE_BUCKET).list(`rooms/${roomId}`, { limit: 1000, sortBy: { column: 'name', order: 'asc' } });
+    const names = new Set((data || []).map((o: any) => o.name));
+    while (names.has(candidate)) {
+      candidate = `${base} (${index})${ext}`;
+      index += 1;
+    }
+  } catch {
+    // fallback: optimistic
+  }
+  return candidate;
+}
+
 // Upload media
 app.post('/api/rooms/:roomId/upload', upload.single('file'), async (req, res) => {
   try {
@@ -142,14 +207,16 @@ app.post('/api/rooms/:roomId/upload', upload.single('file'), async (req, res) =>
     if (rows[0].archived_at) return res.status(410).json({ error: 'ROOM_ARCHIVED' });
     const mediaDir = rows[0].media_dir as string;
     const mime = file.mimetype;
-    const ext = path.extname(file.originalname) || ({
+    const orig = sanitizeFilename(file.originalname || 'file');
+    const guessedExt = path.extname(orig) || ({
       'image/jpeg': '.jpg', 'image/png': '.png', 'video/mp4': '.mp4', 'audio/mpeg': '.mp3', 'audio/mp4': '.m4a'
     } as Record<string, string>)[mime] || '';
-    const destName = `${Date.now()}_${uuidv4()}${ext}`;
-    const destPath = path.join(mediaDir, destName);
+    const baseNoExt = path.basename(orig, path.extname(orig) || guessedExt);
+    let targetName = `${baseNoExt}${guessedExt}`;
     let storageKey: string | null = null;
     if (SUPABASE_BUCKET) {
-      const key = `rooms/${roomId}/${destName}`;
+      targetName = await ensureUniqueStorageName(roomId, targetName);
+      const key = `rooms/${roomId}/${targetName}`;
       const buffer = fs.readFileSync(file.path);
       const { error } = await supabase.storage.from(SUPABASE_BUCKET).upload(key, buffer, { contentType: mime, upsert: false });
       fs.unlinkSync(file.path);
@@ -159,16 +226,18 @@ app.post('/api/rooms/:roomId/upload', upload.single('file'), async (req, res) =>
         'insert into media (room_id, file_path, mime_type, size_bytes, uploaded_at) values ($1, $2, $3, $4, now())',
         [roomId, storageKey, mime, file.size]
       );
-      io.to(roomId).emit('media', { fileName: destName, mime, url: `/api/rooms/${roomId}/media/${destName}` });
-      res.json({ ok: true, file: destName });
+      io.to(roomId).emit('media', { fileName: targetName, mime, url: `/api/rooms/${roomId}/media/${targetName}` });
+      res.json({ ok: true, file: targetName });
     } else {
+      targetName = await ensureUniqueFsName(mediaDir, targetName);
+      const destPath = path.join(mediaDir, targetName);
       fs.renameSync(file.path, destPath);
       await pool.query(
         'insert into media (room_id, file_path, mime_type, size_bytes, uploaded_at) values ($1, $2, $3, $4, now())',
         [roomId, destPath, mime, file.size]
       );
-      io.to(roomId).emit('media', { fileName: destName, mime, url: `/api/rooms/${roomId}/media/${destName}` });
-      res.json({ ok: true, file: destName });
+      io.to(roomId).emit('media', { fileName: targetName, mime, url: `/api/rooms/${roomId}/media/${targetName}` });
+      res.json({ ok: true, file: targetName });
     }
   } catch (e) {
     res.status(500).json({ error: 'UPLOAD_FAILED' });
@@ -189,6 +258,93 @@ app.get('/api/rooms/:roomId/media/:name', async (req, res) => {
   const filePath = path.join(rows[0].media_dir, name);
   if (!fs.existsSync(filePath)) return res.status(404).end();
   res.sendFile(filePath);
+});
+
+// --- Admin API ---
+app.get('/admin/api/overview', adminAuth, async (_req, res) => {
+  const connectedRooms = [...presence.values()].filter((p) => p.count > 0).length;
+  const totalConnected = [...presence.values()].reduce((a, b) => a + b.count, 0);
+  const [{ rows: act } , { rows: arc }, { rows: media }] = await Promise.all([
+    pool.query('select count(*)::int as c from rooms where archived_at is null'),
+    pool.query('select count(*)::int as c from rooms where archived_at is not null'),
+    pool.query('select count(*)::int as c from media')
+  ]);
+  res.json({ connectedRooms, totalConnected, roomsActive: act[0].c, roomsArchived: arc[0].c, mediaCount: media[0].c });
+});
+
+app.get('/admin/api/rooms', adminAuth, async (req, res) => {
+  const archived = req.query.archived === '1';
+  const { rows } = await pool.query(
+    archived ? 'select id, created_at, archived_at from rooms where archived_at is not null order by archived_at desc limit 200' :
+               'select id, created_at from rooms where archived_at is null order by created_at desc limit 200'
+  );
+  const withPresence = rows.map((r: any) => ({ ...r, presence: presence.get(r.id)?.count || 0 }));
+  res.json(withPresence);
+});
+
+app.get('/admin/api/rooms/:roomId/media', adminAuth, async (req, res) => {
+  const { roomId } = req.params;
+  const { rows } = await pool.query('select file_path as path, mime_type as mime, size_bytes as size, uploaded_at from media where room_id=$1 order by uploaded_at desc', [roomId]);
+  const items = rows.map((r: any) => {
+    const name = SUPABASE_BUCKET ? path.basename(r.path) : path.basename(r.path);
+    return { fileName: name, mime: r.mime, size: Number(r.size || 0), url: `/api/rooms/${roomId}/media/${name}`, uploaded_at: r.uploaded_at };
+  });
+  res.json(items);
+});
+
+// Simple Admin UI
+app.get('/admin', adminAuth, (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.end(`<!doctype html>
+<html lang="es"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Admin — ShadowRooms</title>
+<style>
+body{font-family:Segoe UI,system-ui,Roboto,Arial,sans-serif;background:#0b0b10;color:#e5e7eb;margin:0;padding:16px}
+.row{display:flex;gap:8px;align-items:center}
+.card{background:#13131a;border:1px solid #1f2937;border-radius:12px;padding:12px;margin-bottom:12px}
+.btn{background:#ef4444;border:none;color:#fff;padding:8px 12px;border-radius:8px;cursor:pointer}
+.input{background:#13131a;border:1px solid #1f2937;color:#e5e7eb;padding:8px;border-radius:8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+.thumb{background:#0f0f14;border:1px solid #1f2937;border-radius:10px;padding:8px}
+img,video{max-width:100%;border-radius:8px}
+</style></head>
+<body>
+  <div class="card"><div class="row"><h2 style="margin:0">Panel Admin</h2>
+    <button class="btn" onclick="loadOverview()">Resumen</button>
+    <button class="btn" onclick="loadRooms(0)">Salas Activas</button>
+    <button class="btn" onclick="loadRooms(1)">Salas Archivadas</button>
+    <input id="roomId" class="input" placeholder="roomId"/> <button class="btn" onclick="loadMedia()">Ver Media</button>
+  </div></div>
+  <div id="out" class="card"></div>
+  <div id="media" class="grid"></div>
+<script>
+async function loadOverview(){
+  const r = await fetch('./api/overview',{headers: adminHeaders()}); const j = await r.json();
+  document.getElementById('out').innerText = JSON.stringify(j,null,2);
+}
+async function loadRooms(archived){
+  const r = await fetch('./api/rooms?archived='+archived,{headers: adminHeaders()}); const j = await r.json();
+  document.getElementById('out').innerText = JSON.stringify(j,null,2);
+}
+async function loadMedia(){
+  const id = (document.getElementById('roomId')||{}).value; if(!id) return;
+  const r = await fetch('./api/rooms/'+id+'/media',{headers: adminHeaders()}); const j = await r.json();
+  const grid = document.getElementById('media'); grid.innerHTML='';
+  j.forEach(it=>{
+    const d = document.createElement('div'); d.className='thumb';
+    if((it.mime||'').startsWith('image/')){ d.innerHTML = '<img src="'+it.url+'" alt="'+it.fileName+'"/>'; }
+    else if((it.mime||'').startsWith('video/')){ d.innerHTML = '<video src="'+it.url+'" controls></video>'; }
+    else if((it.mime||'').startsWith('audio/')){ d.innerHTML = '<audio src="'+it.url+'" controls></audio>'; }
+    else { d.innerHTML = '<a href="'+it.url+'" target="_blank">'+it.fileName+'</a>'; }
+    grid.appendChild(d);
+  });
+}
+function adminHeaders(){
+  const t = new URLSearchParams(window.location.search).get('token');
+  const h = {}; if(t) h['x-admin-token']=t; return h;
+}
+</script>
+</body></html>`);
 });
 
 // Socket.IO events
