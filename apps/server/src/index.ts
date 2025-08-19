@@ -52,6 +52,12 @@ if (fs.existsSync(WEB_DIST)) {
     res.sendFile(path.join(WEB_DIST, 'index.html'));
   });
 }
+else {
+  app.get(['/','/r/:token'], (_req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end(`<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>ShadowRooms</title></head><body style="font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;padding:24px;background:#0b0b10;color:#e5e7eb"><h1>ShadowRooms</h1><p>No se encontró frontend compilado en <code>apps/web/dist</code>.</p><p>En producción el build del cliente se ejecuta automáticamente antes de iniciar. Si ves este mensaje, revisa permisos de escritura o errores de build.</p></body></html>`);
+  });
+}
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: ORIGIN_LIST && ORIGIN_LIST.length > 0 ? ORIGIN_LIST : '*' } });
