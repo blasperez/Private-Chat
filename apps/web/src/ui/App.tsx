@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { io, Socket } from 'socket.io-client'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
+const API_BASE = (import.meta.env.VITE_API_BASE ?? '') || ''
 
 type Message = { text: string; sender?: string; ts: number }
 
