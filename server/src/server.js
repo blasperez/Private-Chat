@@ -16,7 +16,7 @@ const { createSupabaseClient } = require('./utils/supabase');
 const { roomStore } = require('./store/rooms');
 const uploadRoutes = require('./upload');
 
-const PORT = process.env.PORT || 8080;
+const PORT = Number(process.env.PORT) || 8080;
 const PUBLIC_DIR = path.resolve(__dirname, '../public');
 const STORAGE_DIR = path.resolve(__dirname, '../storage');
 
