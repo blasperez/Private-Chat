@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "build:client": "cd ../client && npm install --no-audit --no-fund --silent && npm run build && xcopy /E /I /Y dist ..\\server\\public 2> NUL || cp -r dist ../server/public",
+    "build:client": "cd ../client && npm install --no-audit --no-fund --silent && node node_modules/vite/bin/vite.js build && xcopy /E /I /Y dist ..\\server\\public 2> NUL || cp -r dist ../server/public",
     "prepare:fs": "node src/scripts/prepareFs.js"
   },
   "dependencies": {
