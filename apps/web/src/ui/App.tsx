@@ -88,7 +88,7 @@ export default function App() {
           <span className="badge">Privado • Temporal • Multimedia</span>
         </div>
         <p className="subtitle">Todo el contenido se eliminará al finalizar la sala. Acceso gratuito con anuncios.</p>
-        <div className="banner">Por seguridad, se conserva un respaldo cifrado temporal y metadatos mínimos para colaborar con autoridades cuando lo requiera la ley.</div>
+        <div className="banner">Chat totalmente anónimo. Sin registro.</div>
       </div>
 
       {phase === 'create' && (
