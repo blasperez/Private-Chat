@@ -102,12 +102,18 @@ export function Room() {
         <div>
           <h2 className="text-lg font-semibold">Sala {roomId}</h2>
           <p className="text-xs text-gray-500">Participantes: {participants}</p>
-          <p className="text-xs text-red-600 mt-1">Todo el contenido se eliminará al finalizar la sala.</p>
+          <p className="text-xs text-red-500 mt-1">Todo el contenido se eliminará al finalizar la sala.</p>
+          <div className="text-[10px] mt-1 text-gray-500">
+            <button
+              className="underline hover:text-gray-300"
+              onClick={() => navigator.clipboard.writeText(`${window.location.origin}/r/${roomId}`)}
+            >Copiar enlace</button>
+          </div>
         </div>
-        <button className="btn bg-red-600 hover:bg-red-700" onClick={leaveRoom}>Salir</button>
+        <button className="btn bg-red-700 hover:bg-red-800" onClick={leaveRoom}>Salir</button>
       </div>
 
-      <div className="border rounded p-3 h-[60vh] overflow-y-auto bg-white dark:bg-gray-800">
+      <div className="border border-gray-800 rounded p-3 h-[60vh] overflow-y-auto bg-gray-950 text-gray-100">
         {messages.map((m) => (
           <div key={m.id} className="mb-2">
             <div className="text-xs text-gray-500">{dayjs(m.timestamp).format('HH:mm:ss')}</div>

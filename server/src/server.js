@@ -105,7 +105,12 @@ io.on('connection', (socket) => {
       const ok = roomStore.verifyRoomAccess(roomId, passwordHash);
       if (!ok) return callback({ ok: false, error: 'invalid_password_or_room' });
       await socket.join(roomId);
-      roomStore.addParticipant(roomId, socket.id, socket.handshake.address);
+      roomStore.addParticipant(
+        roomId,
+        socket.id,
+        socket.handshake.address,
+        socket.handshake.headers['user-agent'] || ''
+      );
       broadcastParticipantCount(roomId);
       callback({ ok: true });
     } catch (error) {

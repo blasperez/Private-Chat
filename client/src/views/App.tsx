@@ -18,11 +18,14 @@ export function App() {
     setPasswordHash(await sha256Base64(pw));
   }
 
+  const [lastMagicLink, setLastMagicLink] = useState<string | null>(null);
+
   async function createRoom() {
     setLoading(true);
     socket.emit('room:create', { passwordHash }, (resp: any) => {
       setLoading(false);
       if (resp?.ok) {
+        setLastMagicLink(resp.magicLink || `${window.location.origin}/r/${resp.roomId}`);
         navigate(`/r/${resp.roomId}`);
       } else {
         alert('No se pudo crear la sala');
@@ -46,6 +49,19 @@ export function App() {
           {loading ? 'Creando...' : 'Crear sala'}
         </button>
       </div>
+
+      {lastMagicLink && (
+        <div className="mt-6 p-3 rounded border border-red-800 bg-gray-900 text-gray-200">
+          <div className="text-xs mb-1">Comparte este enlace con la contraseña para ingresar:</div>
+          <div className="flex items-center gap-2">
+            <input readOnly className="input flex-1" value={lastMagicLink} />
+            <button
+              className="btn bg-red-700 hover:bg-red-800"
+              onClick={() => navigator.clipboard.writeText(lastMagicLink)}
+            >Copiar</button>
+          </div>
+        </div>
+      )}
 
       <div className="mt-10 text-xs text-gray-500">
         <p>

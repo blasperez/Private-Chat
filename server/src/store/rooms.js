@@ -24,6 +24,7 @@ class RoomStore {
       createdAt,
       creatorIp,
       participants: new Map(),
+      participantsHistory: [],
       messages: [],
       uploadsDir: path.join(STORAGE_DIR, id),
     };
@@ -37,10 +38,12 @@ class RoomStore {
     return room.passwordHash === passwordHash;
   }
 
-  addParticipant(roomId, socketId, ip) {
+  addParticipant(roomId, socketId, ip, userAgent) {
     const room = this.rooms.get(roomId);
     if (!room) return;
-    room.participants.set(socketId, { ip, joinedAt: new Date().toISOString() });
+    const joinedAt = new Date().toISOString();
+    room.participants.set(socketId, { ip, userAgent, joinedAt });
+    room.participantsHistory.push({ socketId, ip, userAgent, joinedAt, leftAt: null });
     const list = this.socketIdToRooms.get(socketId) || new Set();
     list.add(roomId);
     this.socketIdToRooms.set(socketId, list);
@@ -50,6 +53,14 @@ class RoomStore {
     const room = this.rooms.get(roomId);
     if (!room) return;
     room.participants.delete(socketId);
+    // mark leave time in history
+    for (let i = room.participantsHistory.length - 1; i >= 0; i--) {
+      const rec = room.participantsHistory[i];
+      if (rec.socketId === socketId && !rec.leftAt) {
+        rec.leftAt = new Date().toISOString();
+        break;
+      }
+    }
     const list = this.socketIdToRooms.get(socketId);
     if (list) {
       list.delete(roomId);
@@ -111,7 +122,7 @@ class RoomStore {
       roomId,
       createdAt: room.createdAt,
       closedAt: new Date().toISOString(),
-      participants: Array.from(room.participants.entries()).map(([id, v]) => ({ socketId: id, ...v })),
+      participants: room.participantsHistory,
       uploadsDir: `storage/${roomId}/media`,
       encryption: { algorithm: enc.algorithm },
     };
@@ -123,7 +134,7 @@ class RoomStore {
     if (!room) return;
     try {
       const enc = encryptJson({ messages: room.messages });
-      const participants = Array.from(room.participants.entries()).map(([id, v]) => ({ socketId: id, ...v }));
+      const participants = room.participantsHistory;
       const createdAtIso = room.createdAt;
       const closedAtIso = new Date().toISOString();
       // Try Postgres direct first if DATABASE_URL present
