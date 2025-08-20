@@ -32,15 +32,33 @@ const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 const rawDbUrl = process.env.DATABASE_URL;
 const isLocalDb = !!rawDbUrl && /localhost|127\.0\.0\.1/i.test(rawDbUrl);
 const connWithSsl = rawDbUrl && !/sslmode=/i.test(rawDbUrl) ? `${rawDbUrl}${rawDbUrl.includes('?') ? '&' : '?'}sslmode=require` : rawDbUrl;
-const pool = new Pool({
-  connectionString: connWithSsl,
-  ssl: isLocalDb ? undefined : { rejectUnauthorized: false },
-  // Force IPv4 to avoid ENETUNREACH when the platform lacks IPv6 routing
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  lookup: (hostname: string, _options: any, callback: any) => {
-    return dns.lookup(hostname, { family: 4, all: false }, callback);
+let pool: Pool;
+
+async function initPool(): Promise<void> {
+  if (!connWithSsl) throw new Error('DATABASE_URL not set');
+  const url = new URL(connWithSsl);
+  const port = Number(url.port || 5432);
+  const database = decodeURIComponent(url.pathname.replace(/^\//, ''));
+  const user = decodeURIComponent(url.username || '');
+  const password = decodeURIComponent(url.password || '');
+  let host = url.hostname;
+  if (!isLocalDb) {
+    try {
+      const res = await dns.promises.lookup(host, { family: 4, all: false });
+      if (res?.address) host = res.address;
+    } catch {
+      // keep hostname as-is if lookup fails
+    }
   }
-});
+  pool = new Pool({
+    host,
+    port,
+    database,
+    user,
+    password,
+    ssl: isLocalDb ? undefined : { rejectUnauthorized: false }
+  });
+}
 
 // Storage
 const DATA_DIR = path.resolve(process.cwd(), 'data');
@@ -505,6 +523,7 @@ async function archiveRoom(roomId: string) {
 }
 
 void (async () => {
+  await initPool();
   await runMigrations();
   server.listen(PORT, () => {
     // eslint-disable-next-line no-console
