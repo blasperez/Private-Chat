@@ -34,7 +34,12 @@ const isLocalDb = !!rawDbUrl && /localhost|127\.0\.0\.1/i.test(rawDbUrl);
 const connWithSsl = rawDbUrl && !/sslmode=/i.test(rawDbUrl) ? `${rawDbUrl}${rawDbUrl.includes('?') ? '&' : '?'}sslmode=require` : rawDbUrl;
 const pool = new Pool({
   connectionString: connWithSsl,
-  ssl: isLocalDb ? undefined : { rejectUnauthorized: false }
+  ssl: isLocalDb ? undefined : { rejectUnauthorized: false },
+  // Force IPv4 to avoid ENETUNREACH when the platform lacks IPv6 routing
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  lookup: (hostname: string, _options: any, callback: any) => {
+    return dns.lookup(hostname, { family: 4, all: false }, callback);
+  }
 });
 
 // Storage
