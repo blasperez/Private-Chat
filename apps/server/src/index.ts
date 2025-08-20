@@ -67,6 +67,30 @@ else {
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: ORIGIN_LIST && ORIGIN_LIST.length > 0 ? ORIGIN_LIST : '*' } });
 
+async function runMigrations() {
+  try {
+    const migrationsDir = path.resolve(process.cwd(), 'apps/server/db/migrations');
+    const files = [
+      '001_init.sql',
+      '002_indexes.sql',
+      '003_policies_supabase.sql',
+      '004_capacity_and_names.sql'
+    ];
+    for (const f of files) {
+      const p = path.join(migrationsDir, f);
+      if (!fs.existsSync(p)) continue;
+      const sql = fs.readFileSync(p, 'utf8');
+      if (sql.trim().length === 0) continue;
+      await pool.query(sql);
+    }
+    // eslint-disable-next-line no-console
+    console.log('migrations ran');
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('MIGRATIONS_FAILED', e);
+  }
+}
+
 type RoomPresence = {
   roomId: string;
   count: number;
@@ -475,9 +499,12 @@ async function archiveRoom(roomId: string) {
   }
 }
 
-server.listen(PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(`server listening on :${PORT}`);
-});
+void (async () => {
+  await runMigrations();
+  server.listen(PORT, () => {
+    // eslint-disable-next-line no-console
+    console.log(`server listening on :${PORT}`);
+  });
+})();
 
 
