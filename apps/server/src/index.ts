@@ -7,7 +7,6 @@ import helmet from 'helmet';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { Pool } from 'pg';
 import dns from 'dns';
 // Prefer IPv4 when resolving DNS (avoids ENETUNREACH in IPv6-only envs)
 // Optional chaining for Node versions where this API may not exist
@@ -18,6 +17,7 @@ import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import jwt from 'jsonwebtoken';
 import { supabase } from './supabase';
+import { createDatabaseAdapter, DatabaseAdapter } from './database';
 
 const PORT = Number(process.env.PORT || 8080);
 const ORIGIN_LIST = process.env.ORIGIN?.split(',').map((s)=>s.trim()).filter(Boolean);
@@ -28,37 +28,8 @@ const ADMIN_USER = process.env.ADMIN_USER;
 const ADMIN_PASS = process.env.ADMIN_PASS;
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 
-// DB pool (force SSL for managed providers like Supabase)
-const rawDbUrl = process.env.DATABASE_URL;
-const isLocalDb = !!rawDbUrl && /localhost|127\.0\.0\.1/i.test(rawDbUrl);
-const connWithSsl = rawDbUrl && !/sslmode=/i.test(rawDbUrl) ? `${rawDbUrl}${rawDbUrl.includes('?') ? '&' : '?'}sslmode=require` : rawDbUrl;
-let pool: Pool;
-
-async function initPool(): Promise<void> {
-  if (!connWithSsl) throw new Error('DATABASE_URL not set');
-  const url = new URL(connWithSsl);
-  const port = Number(url.port || 5432);
-  const database = decodeURIComponent(url.pathname.replace(/^\//, ''));
-  const user = decodeURIComponent(url.username || '');
-  const password = decodeURIComponent(url.password || '');
-  let host = url.hostname;
-  if (!isLocalDb) {
-    try {
-      const res = await dns.promises.lookup(host, { family: 4, all: false });
-      if (res?.address) host = res.address;
-    } catch {
-      // keep hostname as-is if lookup fails
-    }
-  }
-  pool = new Pool({
-    host,
-    port,
-    database,
-    user,
-    password,
-    ssl: isLocalDb ? undefined : { rejectUnauthorized: false }
-  });
-}
+// Database adapter
+let db: DatabaseAdapter;
 
 // Storage
 const DATA_DIR = path.resolve(process.cwd(), 'data');
@@ -92,19 +63,26 @@ const io = new Server(server, { cors: { origin: ORIGIN_LIST && ORIGIN_LIST.lengt
 
 async function runMigrations() {
   try {
-    const migrationsDir = path.resolve(process.cwd(), 'apps/server/db/migrations');
-    const files = [
-      '001_init.sql',
-      '002_indexes.sql',
-      '003_policies_supabase.sql',
-      '004_capacity_and_names.sql'
-    ];
-    for (const f of files) {
-      const p = path.join(migrationsDir, f);
-      if (!fs.existsSync(p)) continue;
-      const sql = fs.readFileSync(p, 'utf8');
-      if (sql.trim().length === 0) continue;
-      await pool.query(sql);
+    // SQLite adapter handles table creation automatically
+    const databaseUrl = process.env.DATABASE_URL;
+    const useSQLite = process.env.USE_SQLITE === 'true' || !databaseUrl || databaseUrl.includes('localhost');
+    
+    if (!useSQLite) {
+      // Only run migrations for PostgreSQL
+      const migrationsDir = path.resolve(process.cwd(), 'apps/server/db/migrations');
+      const files = [
+        '001_init.sql',
+        '002_indexes.sql',
+        '003_policies_supabase.sql',
+        '004_capacity_and_names.sql'
+      ];
+      for (const f of files) {
+        const p = path.join(migrationsDir, f);
+        if (!fs.existsSync(p)) continue;
+        const sql = fs.readFileSync(p, 'utf8');
+        if (sql.trim().length === 0) continue;
+        await db.query(sql);
+      }
     }
     // eslint-disable-next-line no-console
     console.log('migrations ran');
@@ -184,7 +162,7 @@ app.post('/api/rooms', async (req, res) => {
     const magicToken = uuidv4();
     const mediaDir = path.join(DATA_DIR, roomId);
     fs.mkdirSync(mediaDir, { recursive: true });
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       'insert into rooms (id, password_hash, magic_token, media_dir, max_participants) values ($1, $2, $3, $4, $5) returning id, magic_token',
       [roomId, passwordHash, magicToken, mediaDir, cap]
     );
@@ -199,7 +177,7 @@ app.post('/api/rooms', async (req, res) => {
 // Resolve magic link -> room id
 app.get('/api/resolve/:token', async (req, res) => {
   const token = req.params.token;
-  const { rows } = await pool.query('select id from rooms where magic_token=$1', [token]);
+  const { rows } = await db.query('select id from rooms where magic_token=$1', [token]);
   if (!rows[0]) return res.status(404).json({ error: 'NOT_FOUND' });
   res.json({ roomId: rows[0].id });
 });
@@ -211,7 +189,7 @@ app.post('/api/rooms/:roomId/join', async (req, res) => {
     const { password, name } = req.body as { password: string; name?: string };
     const ip = req.headers['x-forwarded-for']?.toString().split(',')[0] || req.socket.remoteAddress || '';
     const ua = req.headers['user-agent'] || '';
-    const room = await pool.query('select id, password_hash, archived_at, max_participants from rooms where id=$1', [roomId]);
+    const room = await db.query('select id, password_hash, archived_at, max_participants from rooms where id=$1', [roomId]);
     if (!room.rows[0]) return res.status(404).json({ error: 'NOT_FOUND' });
     if (room.rows[0].archived_at) return res.status(410).json({ error: 'ROOM_ARCHIVED' });
     const ok = await argon2.verify(room.rows[0].password_hash, password);
@@ -222,7 +200,7 @@ app.post('/api/rooms/:roomId/join', async (req, res) => {
       return res.status(429).json({ error: 'ROOM_FULL' });
     }
     const safeName = (name || '').toString().trim().slice(0, 32) || undefined;
-    await pool.query('insert into room_sessions (room_id, joined_at, ip, user_agent, display_name) values ($1, now(), $2, $3, $4)', [roomId, ip, ua, safeName]);
+    await db.query('insert into room_sessions (room_id, joined_at, ip, user_agent, display_name) values ($1, now(), $2, $3, $4)', [roomId, ip, ua, safeName]);
     const token = jwt.sign({ roomId, name: safeName }, SESSION_SECRET, { expiresIn: '2h' });
     res.json({ ok: true, token, name: safeName });
   } catch (e) {
@@ -250,7 +228,7 @@ async function ensureUniqueFsName(dir: string, desired: string): Promise<string>
 }
 
 async function ensureUniqueStorageName(roomId: string, desired: string): Promise<string> {
-  if (!SUPABASE_BUCKET) return desired;
+  if (!SUPABASE_BUCKET || !supabase) return desired;
   const ext = path.extname(desired);
   const base = path.basename(desired, ext);
   let candidate = desired;
@@ -275,7 +253,7 @@ app.post('/api/rooms/:roomId/upload', upload.single('file'), async (req, res) =>
     const { roomId } = req.params;
     const file = req.file;
     if (!file) return res.status(400).json({ error: 'NO_FILE' });
-    const { rows } = await pool.query('select media_dir, archived_at from rooms where id=$1', [roomId]);
+    const { rows } = await db.query('select media_dir, archived_at from rooms where id=$1', [roomId]);
     if (!rows[0]) return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
     if (rows[0].archived_at) return res.status(410).json({ error: 'ROOM_ARCHIVED' });
     const mediaDir = rows[0].media_dir as string;
@@ -287,7 +265,7 @@ app.post('/api/rooms/:roomId/upload', upload.single('file'), async (req, res) =>
     const baseNoExt = path.basename(orig, path.extname(orig) || guessedExt);
     let targetName = `${baseNoExt}${guessedExt}`;
     let storageKey: string | null = null;
-    if (SUPABASE_BUCKET) {
+    if (SUPABASE_BUCKET && supabase) {
       targetName = await ensureUniqueStorageName(roomId, targetName);
       const key = `rooms/${roomId}/${targetName}`;
       const buffer = fs.readFileSync(file.path);
@@ -295,7 +273,7 @@ app.post('/api/rooms/:roomId/upload', upload.single('file'), async (req, res) =>
       fs.unlinkSync(file.path);
       if (error) return res.status(500).json({ error: 'STORAGE_UPLOAD_FAILED' });
       storageKey = key;
-      await pool.query(
+      await db.query(
         'insert into media (room_id, file_path, mime_type, size_bytes, uploaded_at) values ($1, $2, $3, $4, now())',
         [roomId, storageKey, mime, file.size]
       );
@@ -305,7 +283,7 @@ app.post('/api/rooms/:roomId/upload', upload.single('file'), async (req, res) =>
       targetName = await ensureUniqueFsName(mediaDir, targetName);
       const destPath = path.join(mediaDir, targetName);
       fs.renameSync(file.path, destPath);
-      await pool.query(
+      await db.query(
         'insert into media (room_id, file_path, mime_type, size_bytes, uploaded_at) values ($1, $2, $3, $4, now())',
         [roomId, destPath, mime, file.size]
       );
@@ -320,9 +298,9 @@ app.post('/api/rooms/:roomId/upload', upload.single('file'), async (req, res) =>
 // Serve media
 app.get('/api/rooms/:roomId/media/:name', async (req, res) => {
   const { roomId, name } = req.params;
-  const { rows } = await pool.query('select media_dir from rooms where id=$1', [roomId]);
+  const { rows } = await db.query('select media_dir from rooms where id=$1', [roomId]);
   if (!rows[0]) return res.status(404).end();
-  if (SUPABASE_BUCKET) {
+  if (SUPABASE_BUCKET && supabase) {
     const key = `rooms/${roomId}/${name}`;
     const { data, error } = await supabase.storage.from(SUPABASE_BUCKET).createSignedUrl(key, 60);
     if (error || !data) return res.status(404).end();
@@ -338,16 +316,16 @@ app.get('/admin/api/overview', adminAuth, async (_req, res) => {
   const connectedRooms = [...presence.values()].filter((p) => p.count > 0).length;
   const totalConnected = [...presence.values()].reduce((a, b) => a + b.count, 0);
   const [{ rows: act } , { rows: arc }, { rows: media }] = await Promise.all([
-    pool.query('select count(*)::int as c from rooms where archived_at is null'),
-    pool.query('select count(*)::int as c from rooms where archived_at is not null'),
-    pool.query('select count(*)::int as c from media')
+    db.query('select count(*)::int as c from rooms where archived_at is null'),
+    db.query('select count(*)::int as c from rooms where archived_at is not null'),
+    db.query('select count(*)::int as c from media')
   ]);
   res.json({ connectedRooms, totalConnected, roomsActive: act[0].c, roomsArchived: arc[0].c, mediaCount: media[0].c });
 });
 
 app.get('/admin/api/rooms', adminAuth, async (req, res) => {
   const archived = req.query.archived === '1';
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     archived ? 'select id, created_at, archived_at from rooms where archived_at is not null order by archived_at desc limit 200' :
                'select id, created_at from rooms where archived_at is null order by created_at desc limit 200'
   );
@@ -357,7 +335,7 @@ app.get('/admin/api/rooms', adminAuth, async (req, res) => {
 
 app.get('/admin/api/rooms/:roomId/media', adminAuth, async (req, res) => {
   const { roomId } = req.params;
-  const { rows } = await pool.query('select file_path as path, mime_type as mime, size_bytes as size, uploaded_at from media where room_id=$1 order by uploaded_at desc', [roomId]);
+  const { rows } = await db.query('select file_path as path, mime_type as mime, size_bytes as size, uploaded_at from media where room_id=$1 order by uploaded_at desc', [roomId]);
   const items = rows.map((r: any) => {
     const name = SUPABASE_BUCKET ? path.basename(r.path) : path.basename(r.path);
     return { fileName: name, mime: r.mime, size: Number(r.size || 0), url: `/api/rooms/${roomId}/media/${name}`, uploaded_at: r.uploaded_at };
@@ -438,7 +416,7 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
   socket.on('join', async ({ roomId }: { roomId: string }) => {
     if ((socket.data as any).roomId !== roomId) return;
-    const room = await pool.query('select archived_at from rooms where id=$1', [roomId]);
+    const room = await db.query('select archived_at from rooms where id=$1', [roomId]);
     if (room.rows[0]?.archived_at) return;
     socket.join(roomId);
     const p = presence.get(roomId) || { roomId, count: 0 };
@@ -450,11 +428,11 @@ io.on('connection', (socket) => {
 
   socket.on('message', async (payload: { roomId: string; text: string; sender?: string }) => {
     if ((socket.data as any).roomId !== payload.roomId) return;
-    const room = await pool.query('select archived_at from rooms where id=$1', [payload.roomId]);
+    const room = await db.query('select archived_at from rooms where id=$1', [payload.roomId]);
     if (room.rows[0]?.archived_at) return;
     const cipher = getCipher();
     const safeText = cipher ? cipher.encrypt(payload.text) : payload.text;
-    await pool.query('insert into messages (room_id, text, created_at) values ($1, $2, now())', [payload.roomId, safeText]);
+    await db.query('insert into messages (room_id, text, created_at) values ($1, $2, now())', [payload.roomId, safeText]);
     const sender = payload.sender || (socket as any)?.data?.name;
     io.to(payload.roomId).emit('message', { text: payload.text, sender, ts: Date.now() });
   });
@@ -492,7 +470,7 @@ async function archiveRoom(roomId: string) {
     fs.mkdirSync(logDir, { recursive: true });
     const ts = Date.now();
     const logPath = path.join(logDir, `${roomId}_${ts}.log.jsonl`);
-    const { rows: msgs } = await pool.query('select text, created_at from messages where room_id=$1 order by created_at asc', [roomId]);
+    const { rows: msgs } = await db.query('select text, created_at from messages where room_id=$1 order by created_at asc', [roomId]);
     const cipher = getCipher();
     const write = fs.createWriteStream(logPath);
     for (const m of msgs) {
@@ -516,19 +494,24 @@ async function archiveRoom(roomId: string) {
       } catch {}
     }
 
-    await pool.query('update rooms set archived_at=now(), archive_path=$2 where id=$1', [roomId, finalArchivePath]);
+    await db.query('update rooms set archived_at=now(), archive_path=$2 where id=$1', [roomId, finalArchivePath]);
   } catch (e) {
     // Best-effort
   }
 }
 
 void (async () => {
-  await initPool();
-  await runMigrations();
-  server.listen(PORT, () => {
-    // eslint-disable-next-line no-console
-    console.log(`server listening on :${PORT}`);
-  });
+  try {
+    db = createDatabaseAdapter();
+    await runMigrations();
+    server.listen(PORT, () => {
+      // eslint-disable-next-line no-console
+      console.log(`server listening on :${PORT}`);
+    });
+  } catch (error) {
+    console.error('Failed to initialize server:', error);
+    process.exit(1);
+  }
 })();
 
 
