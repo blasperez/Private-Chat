@@ -3,10 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ShadowRooms — Chat Privado</title>
-    <meta name="description" content="Salas de chat privadas temporales con multimedia." />
-    <!-- AdSense script injected dynamically in App.tsx to use env vars safely -->
+    <title>ShadowRooms — Chat Privado Temporal</title>
+    <meta name="description" content="Plataforma de chat privado con salas temporales. Sin registro. Comparte texto, imágenes, videos y audio de forma anónima y segura." />
+    <meta name="keywords" content="chat privado, chat temporal, chat anónimo, compartir archivos, multimedia, sin registro" />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:title" content="ShadowRooms - Chat Privado Temporal" />
+    <meta property="og:description" content="Crea salas de chat privadas con contraseña. Todo el contenido se elimina automáticamente. Sin registro necesario." />
+    <meta property="og:type" content="website" />
     <link rel="icon" href="/favicon.ico" />
+    
+    <!-- Google AdSense -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js" crossorigin="anonymous"></script>
+    <script>
+      // Initialize AdSense
+      window.addEventListener('DOMContentLoaded', function() {
+        setTimeout(function() {
+          try {
+            (adsbygoogle = window.adsbygoogle || []).push({});
+            (adsbygoogle = window.adsbygoogle || []).push({});
+          } catch (e) {
+            console.log('AdSense init:', e);
+          }
+        }, 1000);
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>

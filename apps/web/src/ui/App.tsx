@@ -99,8 +99,14 @@ export default function App() {
           <div className="title">ShadowRooms</div>
           <span className="badge">Privado • Temporal • Multimedia</span>
         </div>
-        <p className="subtitle">Todo el contenido se eliminará al finalizar la sala. Acceso gratuito con anuncios.</p>
-        <div className="banner">Chat totalmente anónimo. Sin registro.</div>
+        <p className="subtitle">Plataforma de chat seguro con salas privadas temporales</p>
+        <div className="info-banner">
+          <strong>⚠️ Aviso Importante:</strong> Todo el contenido se eliminará automáticamente cuando la sala quede vacía. 
+          Sin registro de usuarios. Acceso completamente gratuito.
+        </div>
+        <div className="banner">
+          🔒 Chat anónimo • 🎭 Sin registro • 🗑️ Contenido temporal • 📱 Multimedia
+        </div>
       </div>
 
       {phase === 'create' && (
@@ -146,11 +152,22 @@ export default function App() {
         </div>
       )}
 
-      {phase === 'room' && (
+              {phase === 'room' && (
         <div className="card">
           <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>Sala: {roomId.slice(0,8)}…</div>
-            <div className="subtitle">Conectados: {presence}</div>
+            <div>
+              <strong>Sala ID:</strong> {roomId.slice(0,8)}...
+              <button 
+                className="btn secondary" 
+                style={{ marginLeft: '10px', padding: '0.25rem 0.5rem', fontSize: '0.85rem' }}
+                onClick={() => navigator.clipboard.writeText(window.location.href)}
+              >
+                📋 Copiar enlace
+              </button>
+            </div>
+            <div className="presence-indicator">
+              {presence} {presence === 1 ? 'usuario' : 'usuarios'} conectado{presence !== 1 ? 's' : ''}
+            </div>
           </div>
           <div className="chat-box">
             {messages.map((m,i)=> {
@@ -191,22 +208,61 @@ export default function App() {
               )
             })}
           </div>
-          <div className="row">
-            <input className="input" placeholder="Escribe un mensaje" value={text} onChange={(e)=>setText(e.target.value)} onKeyDown={(e)=> e.key==='Enter' && sendMessage()} />
-            <button className="btn" onClick={sendMessage}>Enviar</button>
-            <input type="file" onChange={onUpload} />
+          <div className="col">
+            <div className="row">
+              <input 
+                className="input" 
+                placeholder="Escribe un mensaje..." 
+                value={text} 
+                onChange={(e)=>setText(e.target.value)} 
+                onKeyDown={(e)=> e.key==='Enter' && sendMessage()} 
+                style={{ flex: 1 }}
+              />
+              <button className="btn" onClick={sendMessage}>📤 Enviar</button>
+            </div>
+            <div className="row">
+              <label className="file-label">
+                📎 Adjuntar archivo
+                <input 
+                  type="file" 
+                  onChange={onUpload} 
+                  accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt"
+                />
+              </label>
+              <span className="subtitle" style={{ fontSize: '0.85rem' }}>
+                Soporta: Imágenes, Videos, Audio, Documentos (máx. 100MB)
+              </span>
+            </div>
           </div>
         </div>
       )}
 
+      {/* Google Ads - Top Banner */}
       {import.meta.env.VITE_ADSENSE_CLIENT && (
-        <>
-          <script async src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${import.meta.env.VITE_ADSENSE_CLIENT}`} crossOrigin="anonymous"></script>
-          <ins className="adsbygoogle" style={{ display: 'block', marginTop: 16 }} data-ad-client={import.meta.env.VITE_ADSENSE_CLIENT} data-ad-slot={import.meta.env.VITE_ADSENSE_SLOT_TOP} data-ad-format="auto" data-full-width-responsive="true"></ins>
-          <script dangerouslySetInnerHTML={{ __html: `
-            (adsbygoogle = window.adsbygoogle || []).push({});
-          `}} />
-        </>
+        <div className="ad-container">
+          <ins 
+            className="adsbygoogle" 
+            style={{ display: 'block', width: '100%', height: 'auto' }} 
+            data-ad-client={import.meta.env.VITE_ADSENSE_CLIENT} 
+            data-ad-slot={import.meta.env.VITE_ADSENSE_SLOT_TOP} 
+            data-ad-format="auto" 
+            data-full-width-responsive="true"
+          />
+        </div>
+      )}
+      
+      {/* Google Ads - Bottom Banner */}
+      {import.meta.env.VITE_ADSENSE_CLIENT && import.meta.env.VITE_ADSENSE_SLOT_BOTTOM && (
+        <div className="ad-container">
+          <ins 
+            className="adsbygoogle" 
+            style={{ display: 'block', width: '100%', height: 'auto' }} 
+            data-ad-client={import.meta.env.VITE_ADSENSE_CLIENT} 
+            data-ad-slot={import.meta.env.VITE_ADSENSE_SLOT_BOTTOM} 
+            data-ad-format="auto" 
+            data-full-width-responsive="true"
+          />
+        </div>
       )}
     </div>
   )

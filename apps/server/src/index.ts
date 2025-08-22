@@ -18,6 +18,7 @@ import { v4 as uuidv4 } from 'uuid';
 import jwt from 'jsonwebtoken';
 import { supabase } from './supabase';
 import { createDatabaseAdapter, DatabaseAdapter } from './database';
+import { ForensicsService } from './forensics';
 
 const PORT = Number(process.env.PORT || 8080);
 const ORIGIN_LIST = process.env.ORIGIN?.split(',').map((s)=>s.trim()).filter(Boolean);
@@ -30,6 +31,7 @@ const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 
 // Database adapter
 let db: DatabaseAdapter;
+let forensics: ForensicsService;
 
 // Storage
 const DATA_DIR = path.resolve(process.cwd(), 'data');
@@ -166,6 +168,19 @@ app.post('/api/rooms', async (req, res) => {
       'insert into rooms (id, password_hash, magic_token, media_dir, max_participants) values ($1, $2, $3, $4, $5) returning id, magic_token',
       [roomId, passwordHash, magicToken, mediaDir, cap]
     );
+    
+    // Log forense
+    if (forensics) {
+      await forensics.logEvent({
+        roomId,
+        timestamp: new Date(),
+        eventType: 'room_created',
+        ipAddress: req.headers['x-forwarded-for']?.toString().split(',')[0] || req.socket.remoteAddress,
+        userAgent: req.headers['user-agent'],
+        metadata: { capacity: cap }
+      });
+    }
+    
     res.json({ roomId: rows[0].id, magicLink: `${req.protocol}://${req.get('host')}/r/${rows[0].magic_token}` });
   } catch (e) {
     // eslint-disable-next-line no-console
@@ -503,10 +518,13 @@ async function archiveRoom(roomId: string) {
 void (async () => {
   try {
     db = createDatabaseAdapter();
+    forensics = new ForensicsService(db);
     await runMigrations();
     server.listen(PORT, () => {
       // eslint-disable-next-line no-console
       console.log(`server listening on :${PORT}`);
+      console.log(`Forensics service initialized`);
+      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     });
   } catch (error) {
     console.error('Failed to initialize server:', error);
