@@ -19,8 +19,19 @@ export class ChatService {
       is_active: true
     };
 
-    // Simular guardado en base de datos
-    console.log('🏠 Sala creada:', { id: room.id, name: room.name });
+    // Guardar en Supabase
+    const { data, error } = await supabase
+      .from('chat_rooms')
+      .insert([room])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error al crear sala en Supabase:', error);
+      throw new Error('No se pudo crear la sala');
+    }
+
+    console.log('🏠 Sala creada en Supabase:', { id: data.id, name: data.name });
 
     // Inicializar log de sesión
     this.activeSessions.set(roomId, {
@@ -34,19 +45,21 @@ export class ChatService {
       total_media: 0
     });
 
-    return room;
+    return data;
   }
 
   static async joinRoom(roomId: string, password: string, username: string): Promise<{ success: boolean; room?: Room; user?: ChatUser }> {
     try {
-      // Simular verificación de sala
+      // Obtener sala de Supabase
       const room = await this.getRoomById(roomId);
       if (!room) {
+        console.log('Sala no encontrada:', roomId);
         return { success: false };
       }
 
       const isValidPassword = await SecurityService.verifyPassword(password, room.password_hash);
       if (!isValidPassword) {
+        console.log('Contraseña incorrecta para sala:', roomId);
         return { success: false };
       }
 
@@ -57,7 +70,34 @@ export class ChatService {
         is_active: true
       };
 
+      // Guardar usuario en Supabase
+      const { error: userError } = await supabase
+        .from('chat_users')
+        .insert([{
+          id: user.id,
+          room_id: roomId,
+          username: user.username,
+          joined_at: user.joined_at,
+          is_active: true
+        }]);
+
+      if (userError) {
+        console.error('Error al guardar usuario:', userError);
+      }
+
       // Actualizar contador de usuarios activos
+      const { error: updateError } = await supabase
+        .from('chat_rooms')
+        .update({ 
+          active_users: room.active_users + 1,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', roomId);
+
+      if (updateError) {
+        console.error('Error al actualizar sala:', updateError);
+      }
+
       room.active_users += 1;
 
       // Agregar usuario al log de sesión
@@ -105,8 +145,17 @@ export class ChatService {
   }
 
   static async sendMessage(message: Message): Promise<void> {
-    // Simular envío de mensaje
-    console.log('💬 Mensaje enviado:', { roomId: message.room_id, type: message.message_type });
+    // Guardar mensaje en Supabase
+    const { error } = await supabase
+      .from('chat_messages')
+      .insert([message]);
+
+    if (error) {
+      console.error('Error al guardar mensaje:', error);
+      throw new Error('No se pudo enviar el mensaje');
+    }
+
+    console.log('💬 Mensaje guardado en Supabase:', { roomId: message.room_id, type: message.message_type });
 
     // Agregar mensaje al log de seguridad
     const sessionLog = this.activeSessions.get(message.room_id);
@@ -123,18 +172,35 @@ export class ChatService {
         });
       }
     }
+
+    // Guardar en security_logs
+    await supabase
+      .from('security_logs')
+      .insert([{
+        event_type: 'message_sent',
+        room_id: message.room_id,
+        user_id: message.user_id,
+        metadata: {
+          message_type: message.message_type,
+          has_media: !!message.media_url
+        }
+      }]);
   }
 
   private static async getRoomById(roomId: string): Promise<Room | null> {
-    // Simular obtención de sala de base de datos
-    return {
-      id: roomId,
-      name: 'Sala de Chat',
-      password_hash: 'hash_placeholder',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      active_users: 0,
-      is_active: true
-    };
+    // Obtener sala de Supabase
+    const { data, error } = await supabase
+      .from('chat_rooms')
+      .select('*')
+      .eq('id', roomId)
+      .eq('is_active', true)
+      .single();
+
+    if (error || !data) {
+      console.error('Error al obtener sala:', error);
+      return null;
+    }
+
+    return data;
   }
 }
