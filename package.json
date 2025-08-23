@@ -12,7 +12,7 @@
     "build:client": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "vite preview --host 0.0.0.0"
+    "start": "npm run preview"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.56.0",
