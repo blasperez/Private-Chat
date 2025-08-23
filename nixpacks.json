@@ -3,13 +3,13 @@
   "buildPlan": {
     "phases": {
       "setup": {
-        "nixPkgs": ["nodejs_20", "npm-9_x"]
+        "nixPkgs": ["nodejs_20"]
       },
       "install": {
-        "cmds": ["npm ci --omit=dev"]
+        "cmds": ["npm ci"]
       },
       "build": {
-        "cmds": ["npm run build"]
+        "cmds": ["npm run build:client"]
       }
     }
   },
